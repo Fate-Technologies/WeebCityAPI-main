@@ -1,217 +1,269 @@
-# Tatakai API 🎌
+# WeebCity API 🎌
 
-> Unified anime & manga **catalog** API powering the Tatakai V6 platform — AniList + Jikan metadata behind a self-healing Postgres mirror, extension manifests, cross-source id mapping, MAL/AniList list sync, news, and dynamic OG images.
+> The official backend API powering Weeb City — an anime and manga catalog service providing metadata aggregation, cross-source ID mapping, account list synchronisation, news, extension integrations, and dynamic Open Graph images.
 
 <p>
-  <img alt="version" src="https://img.shields.io/badge/version-6.0.0-6C5CE7" />
-  <img alt="runtime" src="https://img.shields.io/badge/runtime-Node%20%2B%20Hono-000" />
-  <img alt="data" src="https://img.shields.io/badge/data-Prisma%20%C2%B7%20Supabase%20%C2%B7%20Redis-3ECF8E" />
-  <img alt="license" src="https://img.shields.io/badge/license-MPL--2.0-orange" />
+  <img alt="Version" src="https://img.shields.io/badge/version-6.0.0-7F03FE" />
+  <img alt="Runtime" src="https://img.shields.io/badge/runtime-Node.js%20%2B%20Hono-000" />
+  <img alt="Data" src="https://img.shields.io/badge/data-Prisma%20%C2%B7%20Postgres%20%C2%B7%20Supabase-3ECF8E" />
+  <img alt="License" src="https://img.shields.io/badge/license-Proprietary-red" />
 </p>
 
 ---
 
 ## Overview
 
-Tatakai API (`@tatakai/api-v3`) is the backend catalog service for the Tatakai
-V6 otaku-community app. It aggregates public metadata from **AniList** and
-**Jikan (MyAnimeList)** into a folded-in Postgres **mirror**, then serves it
-through a cache + live-fallback + background-backfill pipeline so clients stay
-fast without hammering the upstream APIs.
+**WeebCity API** is the backend service powering the Weeb City platform. It integrates metadata from **AniList** and **Jikan (MyAnimeList)**, using a PostgreSQL media mirror, caching, live fallbacks, and background processing to deliver reliable catalog data.
 
-It **does not host or scrape streaming content** — playback sources come from
-user-installed extensions. This service handles metadata, id-mappings, account
-list-sync, news, telemetry and share images only.
+The API provides services for anime and manga metadata, cross-source ID mappings, account list synchronisation, news ingestion, extension integrations, playback-related functionality, telemetry, and dynamic social-sharing images.
+
+WeebCity API is designed to support the Weeb City ecosystem. Access to the source code and use of the software are subject to the terms established by Fate Technologies.
+
+**Content policy:** WeebCity API does not itself host anime or manga video content. Metadata and related functionality may rely on third-party services, while playback integrations may use separately configured sources.
 
 ---
 
-## What's new in V6
+## Features
 
-- **Prisma + Postgres media mirror** — AniList catalog cached locally with TTL
-  freshness, fetch-on-miss and background backfill (`ANILIST_USE_MIRROR`).
-- **MAL / AniList list sync** — OAuth exchange, preview diff, apply, and
-  realtime single-item progress sync under `/api/v3/sync/*`, with unified
-  anime + manga proposals.
-- **Manga id-mapping + chapter-hierarchy merge** across multiple sources.
-- **News ingestion** (RSS → forum bot account) and **airing-reminder** jobs.
-- **Dynamic OG share cards** rendered with Satori + resvg (`/api/og/*`).
-- **Inbound hardening** — per-IP rate limits, request timeouts, body-size caps,
-  CORS allow-list, Cloudflare Turnstile verification, and a Supabase-JWT admin
-  gate.
-
----
-
-## Tech stack
-
-| Layer | Tooling |
-| --- | --- |
-| HTTP | [Hono](https://hono.dev) on `@hono/node-server` |
-| Language | TypeScript (ESM); `tsx` for dev/watch |
-| Catalog data | **Prisma** ORM over Postgres (media mirror) |
-| App data / auth | **Supabase** (service-role, server-side) |
-| Cache | Redis via `ioredis` + in-memory stale-while-revalidate |
-| GraphQL mirror | `@pothos/core` + `graphql` (AniList-compatible) |
-| Rate limiting | `bottleneck` (shared AniList token bucket) |
-| Images | `satori` + `@resvg/resvg-js` (OG cards) |
-| Validation | `zod`, `envalid` |
-| Logging | `pino` / `pino-pretty` |
+- **Anime catalog:** Metadata aggregation from AniList and Jikan.
+- **PostgreSQL media mirror:** Locally stored catalog data with freshness checks, fetch-on-miss, and background updates.
+- **Manga services:** Manga metadata, cross-source ID mapping, and chapter hierarchy merging.
+- **Account synchronisation:** MyAnimeList and AniList list integration, including preview, import, export, and progress synchronisation where configured.
+- **Extension integrations:** Extension manifests and related service endpoints.
+- **News ingestion:** RSS-based news collection and integration with a configured bot account.
+- **Airing reminders:** Background jobs for airing-related notifications.
+- **Dynamic Open Graph images:** Generated share cards for supported pages.
+- **Caching:** Redis and in-memory caching strategies.
+- **Security controls:** Configurable rate limits, request timeouts, body-size limits, CORS restrictions, and administrative authentication.
+- **Monitoring and telemetry:** Logging, crash reporting, and operational endpoints.
 
 ---
 
-## Project structure
+## Technology Stack
 
-```
+| Layer                               | Technology                   |
+| ----------------------------------- | ---------------------------- |
+| HTTP framework                      | Hono and `@hono/node-server` |
+| Language                            | TypeScript (ES modules)      |
+| Runtime                             | Node.js                      |
+| Database ORM                        | Prisma                       |
+| Database                            | PostgreSQL                   |
+| Authentication and application data | Supabase                     |
+| Caching                             | Redis and in-memory caching  |
+| GraphQL                             | Pothos and GraphQL           |
+| Rate limiting                       | Bottleneck                   |
+| Image generation                    | Satori and resvg             |
+| Validation                          | Zod and Envalid              |
+| Logging                             | Pino and Pino Pretty         |
+
+---
+
+## Project Structure
+
+```text
 src/
-├── config/       # env (envalid) + logger
-├── lib/          # supabase client, response envelope, rate limiter, cache
-├── middleware/   # auth gates (Supabase admin, optional catalog auth)
-├── mirror/       # AniList Postgres mirror (schema + resolvers)
-├── providers/    # anilist + jikan upstream adapters
-├── routes/       # HTTP endpoints (+ routes/admin/*)
-├── services/     # integration sync, id-mapping, news
-├── jobs/         # background workers (ingest, feeds, mappings, news, airing)
-└── types/        # shared types
-prisma/           # schema.prisma + migrations
-scripts/          # db / import / scrape / refresh CLIs
+├── config/       # Environment configuration and logging
+├── lib/          # Shared utilities, cache, Supabase, and responses
+├── middleware/   # Authentication, rate limiting, and security
+├── mirror/       # AniList-compatible catalog mirror
+├── providers/    # AniList and Jikan integrations
+├── routes/       # API endpoints and administrative routes
+├── services/     # Catalog, mapping, news, and synchronisation
+├── jobs/         # Background processing and refresh workers
+└── types/        # Shared TypeScript types
+
+prisma/           # Prisma schema
+scripts/          # Database, import, scraping, and refresh utilities
+tests/            # Automated tests
 ```
 
 ---
 
-## API surface
+## API Overview
 
-Base path: `/api/v3` — live docs at [api.tatakai.me/docs](http://api.tatakai.me/docs).
+The API includes endpoints for the following areas:
 
-| Area | Routes |
-| --- | --- |
-| Catalog | `content`, `countries`, `providers` |
-| Manga | `manga`, `mapping` |
-| Account sync | `sync` (MAL/AniList import·export·preview·apply), `playback` |
-| Extensions | `extensions`, `toko` |
-| Sharing | `publicShare`, `og` |
-| Proxy / relay | `proxy`, `anilistProxy`, `relay` |
-| Telemetry | `crash`, `security` |
-| News | `news` |
-| Admin | `admin/{content,countries,extensions,mappings,news,providers}` |
+| Area                    | Functionality                                                        |
+| ----------------------- | -------------------------------------------------------------------- |
+| Catalog                 | Anime metadata, countries, and providers                             |
+| Manga                   | Manga catalog and ID mapping                                         |
+| Account synchronisation | MyAnimeList and AniList integrations                                 |
+| Extensions              | Extension registry and related integrations                          |
+| Sharing                 | Public share functionality and Open Graph images                     |
+| Proxy and relay         | Configured proxy and relay services                                  |
+| Telemetry               | Crash reporting and security-related endpoints                       |
+| News                    | News collection and delivery                                         |
+| Administration          | Protected catalog, mapping, extension, news, and provider management |
+| Pairing                 | TV pairing and related functionality                                 |
+
+The exact routes and available functionality depend on the deployed API version and configuration.
 
 ---
 
-## Getting started
+## Getting Started
 
-**Prerequisites:** Node.js 20+, a Postgres database (the mirror) and a Supabase
-project.
+### Prerequisites
+
+- Node.js 20 or later
+- npm
+- A PostgreSQL database
+- A configured Supabase project
+- Redis, if using Redis-backed caching
+- Credentials for any third-party integrations you enable
+
+### Installation
+
+Clone the repository using an account authorised by Fate Technologies:
 
 ```bash
-# 1. install (runs `prisma generate` on postinstall)
+git clone https://github.com/Fate-Technologies/WeebCityAPI-main.git
+cd WeebCityAPI-main
+```
+
+Install dependencies:
+
+```bash
 npm install
+```
 
-# 2. configure — create .env and fill in your own secrets (see below)
+Configure the environment variables described below. Then generate the Prisma client:
 
-# 3. generate the Prisma client
+```bash
 npm run prisma:generate
+```
 
-# 4. run in watch mode → http://localhost:4001
+Start the development server:
+
+```bash
 npm run dev
 ```
 
-Production:
+The development server is configured to use port `4001` by default, unless overridden by the application configuration.
+
+### Production
+
+Build the application:
 
 ```bash
-npm run build     # prisma generate && tsc
-npm start         # node dist/server.js
+npm run build
 ```
 
-> **Windows note:** stop the `tsx watch` dev server before `npm run build` — a
-> running server keeps the Prisma query-engine DLL locked and `prisma generate`
-> fails with `EPERM … query_engine-windows.dll.node`.
-
----
-
-## Environment variables
-
-Secrets live in `.env`, which is **git-ignored — never commit it**. Key vars:
-
-| Variable | Purpose |
-| --- | --- |
-| `PORT` | HTTP port (default `4001`) |
-| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Supabase server client |
-| `DATABASE_URL` | Postgres connection for the Prisma media mirror |
-| `ANILIST_TOKEN` | Optional AniList OAuth token (higher rate limit) |
-| `ANILIST_USE_MIRROR` / `ENABLE_LIVE_FALLBACK` | Mirror + fetch-on-miss toggles |
-| `REDIS_URL` | Redis cache (optional) |
-| `CORS_ALLOWED_ORIGINS` | Comma-separated CORS allow-list (`*` = any) |
-| `RATE_LIMIT_*` / `REQUEST_TIMEOUT_MS` / `MAX_BODY_BYTES` | Inbound hardening |
-| `TATAKAI_ADMIN_API_SECRET` | Admin API secret |
-| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile siteverify |
-| `MAL_CLIENT_ID` / `MAL_CLIENT_SECRET` | MyAnimeList OAuth |
-| `ANILIST_CLIENT_ID` / `ANILIST_CLIENT_SECRET` | AniList OAuth |
-| `TOKO_API_URL` | Toko extension streaming-service base URL |
-| `NEWS_BOT_USER_ID` / `NEWS_BOT_EMAIL` | News-ingestion bot account |
-| `CRASH_DISCORD_WEBHOOK` | Crash-report Discord forward |
-| `PUBLIC_SITE_ORIGIN` / `PUBLIC_API_ORIGIN` | Absolute share / OG URLs |
-
-Production boot **fails fast** if `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
-`DATABASE_URL`, `TATAKAI_ADMIN_API_SECRET` or `RELAY_TICKET_SECRET` are unset.
-
----
-
-## Background jobs
+Start the production server:
 
 ```bash
-npm run job:ingest          # media ingestion worker
-npm run job:feeds           # content / feed refresh
-npm run job:mappings        # id-mapping refresh
-npm run job:news            # news RSS ingestion
-npm run job:news-bootstrap  # create the News bot account (one-time)
-npm run job:airing          # airing-schedule reminders
+npm start
 ```
 
----
+Refer to the deployment configuration and package scripts for the required production setup.
 
-## Social
-
-> **Discord**: [https://dsc.gg/tatakai](https://dsc.gg/tatakai)
-
-### Disclaimer
-- No other social media handles are available right now. If you see any, please report us. We only have a **Discord server**.
-- If you are using our **project to create your own project**, you must:
-  - **Open-source** your project
-  - **Give credit** to me
-  - You **cannot sell** this project under the guise of modification, as it is licensed under the
-    `Mozilla Public License Version 2.0`.
+**Windows note:** Stop the development server before running the build if Prisma reports that its Windows query-engine DLL is locked.
 
 ---
 
-## Legal / DMCA
+## Environment Configuration
 
-- We **DO NOT** host any anime content on our servers
-- We **DO NOT** own any of the anime content displayed
-- All content is sourced from third-party platforms via public APIs and user-installed extensions
-- We are merely a frontend interface demonstrating technical capabilities
-- This is a **non-commercial, educational project**
+Create a local `.env` file containing the credentials and settings required by your deployment.
 
-> *Need contact?* [Click Here](mailto:snozxyx@gmail.com)
+**Never commit `.env` files, production credentials, private keys, or API secrets to Git.**
+
+The following variables are referenced by the application configuration and integrations:
+
+| Variable                                      | Purpose                                                                  |
+| --------------------------------------------- | ------------------------------------------------------------------------ |
+| `PORT`                                        | HTTP server port                                                         |
+| `SUPABASE_URL`                                | Supabase project URL                                                     |
+| `SUPABASE_SERVICE_ROLE_KEY`                   | Server-side Supabase service-role credential                             |
+| `DATABASE_URL`                                | PostgreSQL connection string                                             |
+| `ANILIST_TOKEN`                               | Optional AniList API token                                               |
+| `ANILIST_USE_MIRROR`                          | Controls catalog mirror usage                                            |
+| `ENABLE_LIVE_FALLBACK`                        | Controls live metadata fallbacks                                         |
+| `REDIS_URL`                                   | Optional Redis connection                                                |
+| `CORS_ALLOWED_ORIGINS`                        | Allowed request origins                                                  |
+| `RATE_LIMIT_*`                                | Rate-limiting configuration                                              |
+| `REQUEST_TIMEOUT_MS`                          | Request timeout                                                          |
+| `MAX_BODY_BYTES`                              | Maximum request body size                                                |
+| `TATAKAI_ADMIN_API_SECRET`                    | Legacy-named administrative secret, if still required by the application |
+| `TURNSTILE_SECRET_KEY`                        | Cloudflare Turnstile verification                                        |
+| `MAL_CLIENT_ID` / `MAL_CLIENT_SECRET`         | MyAnimeList OAuth credentials                                            |
+| `ANILIST_CLIENT_ID` / `ANILIST_CLIENT_SECRET` | AniList OAuth credentials                                                |
+| `TOKO_API_URL`                                | Toko integration base URL                                                |
+| `NEWS_BOT_USER_ID` / `NEWS_BOT_EMAIL`         | News ingestion bot configuration                                         |
+| `CRASH_DISCORD_WEBHOOK`                       | Optional crash-report webhook                                            |
+| `PUBLIC_SITE_ORIGIN` / `PUBLIC_API_ORIGIN`    | Public site and API origins                                              |
+| `RELAY_TICKET_SECRET`                         | Relay ticket signing secret, if required                                 |
+
+This list is based on the existing project documentation and should be checked against the current source code before deployment. Some variables may be optional depending on the enabled features.
 
 ---
 
-## Note 🚨
+## Background Jobs
 
-- This project is directly connected with the [Tatakai](https://github.com/snozxyx/tatakai) project. Therefore, I do **not** recommend using this independently. Use the main project instead. I am one of the head maintainers at **CoorenLabs**:
-  - **GitHub**: [https://github.com/coorenlabs/cooren](https://github.com/coorenlabs/cooren)
-  - *(Make sure to ⭐ the project!)*
-  - For scraping logic, [Toko](https://github.com/snozxyx/toko) is the official unified extension.
+The project includes scripts for background processing, such as catalog ingestion, feed refreshes, ID mapping, news ingestion, and airing reminders.
+
+Where configured, these jobs can be run using the corresponding npm scripts:
+
+```bash
+npm run job:ingest
+npm run job:feeds
+npm run job:mappings
+npm run job:news
+npm run job:news-bootstrap
+npm run job:airing
+```
+
+Check `package.json` for the currently supported script names before running them.
 
 ---
 
-## API
+## Security
 
-[http://api.tatakai.me/docs](http://api.tatakai.me/docs)
+WeebCity API is intended to run in a controlled server environment.
+
+- Store secrets in environment variables or an appropriate secrets manager.
+- Keep administrative endpoints protected.
+- Restrict CORS to trusted origins where possible.
+- Configure appropriate rate limits and request timeouts.
+- Use HTTPS for production traffic.
+- Keep Node.js and dependencies updated.
+- Do not expose database credentials or service-role keys to frontend clients.
+- Review third-party API terms before enabling integrations.
 
 ---
 
-## License
+## Third-Party Services and Attribution
 
-Licensed under the **Mozilla Public License 2.0 (MPL-2.0)**.
+WeebCity API may integrate with third-party services, including AniList, Jikan, MyAnimeList, Supabase, and other configured providers.
 
+Weeb City and Fate Technologies are independent projects and are not necessarily affiliated with, endorsed by, or sponsored by these services. Third-party names, logos, APIs, and content remain subject to their respective owners' rights and terms.
 
+---
 
+## Legal Notice
 
+**WeebCity API is proprietary software owned or controlled by Fate Technologies, subject to applicable third-party rights and licences.**
+
+- The source code is not offered under an open-source licence.
+- Access to the repository does not grant permission to redistribute, publish, resell, sublicense, or commercially exploit the software.
+- Modification, deployment, and integration rights require appropriate authorisation from Fate Technologies.
+- Third-party services and metadata remain subject to their respective terms, licences, and usage restrictions.
+- Operators are responsible for ensuring that their deployment complies with applicable laws and third-party service requirements.
+
+Nothing in this notice claims ownership of third-party content or intellectual property.
+
+For licensing, commercial use, or permission requests, contact Fate Technologies through its official communication channels.
+
+---
+
+## Contact and Support
+
+For WeebCity API support, licensing enquiries, or business enquiries, contact Fate Technologies through its official channels.
+
+**GitHub repository:** [Fate-Technologies/WeebCityAPI-main](https://github.com/Fate-Technologies/WeebCityAPI-main)
+
+---
+
+## Copyright
+
+Copyright © Fate Technologies. All rights reserved.
+
+Unless expressly authorised in writing, no permission is granted to copy, redistribute, modify, sublicense, or commercially exploit this software.
