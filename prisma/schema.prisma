@@ -1,0 +1,224 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "linux-musl-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Media {
+  id            Int     @id
+  idMal         Int?
+  titleRomaji   String?
+  titleEnglish  String?
+  titleNative   String?
+  titleUserPreferred String?
+  type          String?
+  format        String?
+  status        String?
+  description   String?
+
+  startYear     Int?
+  startMonth    Int?
+  startDay      Int?
+  endYear       Int?
+  endMonth      Int?
+  endDay        Int?
+
+  season        String?
+  seasonYear    Int?
+  seasonInt     Int?
+  episodes      Int?
+  duration      Int?
+  chapters      Int?
+  volumes       Int?
+  countryOfOrigin String?
+  isLicensed    Boolean?
+  source        String?
+  hashtag       String?
+
+  trailerId        String?
+  trailerSite      String?
+  trailerThumbnail String?
+
+  updatedAt     Int?
+
+  coverImageExtraLarge String?
+  coverImageLarge      String?
+  coverImageMedium     String?
+  coverImageColor      String?
+  bannerImage          String?
+
+  genres        String[]
+  synonyms      String[]
+
+  averageScore  Int?
+  meanScore     Int?
+  popularity    Int?
+  favourites    Int?
+  trending      Int?
+
+  isAdult       Boolean @default(false)
+  isLocked      Boolean @default(false)
+  siteUrl       String?
+
+  // Low-value / display-only nested blobs kept as JSON
+  rankings          Json?
+  externalLinks     Json?
+  streamingEpisodes Json?
+  nextAiringEpisode Json?
+  airingSchedule    Json?
+  reviews           Json?
+  statsScoreDistribution  Json?
+  statsStatusDistribution Json?
+
+  fetchedAt     DateTime @default(now())
+
+  characters      MediaCharacter[]
+  staff           MediaStaff[]
+  studios         MediaStudio[]
+  tags            MediaTag[]
+  relations       MediaRelation[]       @relation("MediaRelationsFrom")
+  recommendations MediaRecommendation[] @relation("MediaRecsFrom")
+
+  @@index([averageScore])
+  @@index([popularity])
+  @@index([seasonYear, season])
+  @@index([format])
+  @@index([status])
+}
+
+model Character {
+  id               Int      @id
+  nameFull         String?
+  nameNative       String?
+  nameAlternative  String[]
+  imageLarge       String?
+  imageMedium      String?
+  description      String?
+  fetchedAt        DateTime @default(now())
+
+  media MediaCharacter[]
+
+  @@index([nameFull])
+}
+
+model Staff {
+  id           Int      @id
+  nameFull     String?
+  nameNative   String?
+  languageV2   String?
+  imageLarge   String?
+  imageMedium  String?
+  fetchedAt    DateTime @default(now())
+
+  media MediaStaff[]
+
+  @@index([nameFull])
+}
+
+model Studio {
+  id                Int      @id
+  name              String?
+  isAnimationStudio Boolean  @default(false)
+  fetchedAt         DateTime @default(now())
+
+  media MediaStudio[]
+
+  @@index([name])
+}
+
+model Tag {
+  id          Int     @id
+  name        String?
+  description String?
+  category    String?
+  isAdult     Boolean @default(false)
+
+  media MediaTag[]
+
+  @@index([name])
+}
+
+model MediaCharacter {
+  mediaId     Int
+  characterId Int
+  role        String?
+  voiceActors Json?
+
+  media     Media     @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@id([mediaId, characterId])
+  @@index([characterId])
+}
+
+model MediaStaff {
+  mediaId Int
+  staffId Int
+  role    String @default("")
+
+  media Media @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  staff Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@id([mediaId, staffId, role])
+  @@index([staffId])
+}
+
+model MediaStudio {
+  mediaId  Int
+  studioId Int
+  isMain   Boolean @default(false)
+
+  media  Media  @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  studio Studio @relation(fields: [studioId], references: [id], onDelete: Cascade)
+
+  @@id([mediaId, studioId])
+  @@index([studioId])
+}
+
+model MediaTag {
+  mediaId          Int
+  tagId            Int
+  rank             Int?
+  isMediaSpoiler   Boolean @default(false)
+  isGeneralSpoiler Boolean @default(false)
+
+  media Media @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  tag   Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([mediaId, tagId])
+  @@index([tagId])
+}
+
+// relatedMediaId / recommendedMediaId are NOT foreign keys: the target media
+// may not be in the DB yet. A JSON snapshot of the node is stored for display.
+model MediaRelation {
+  id             Int      @id @default(autoincrement())
+  mediaId        Int
+  relatedMediaId Int
+  relationType   String?
+  nodeSnapshot   Json?
+
+  media Media @relation("MediaRelationsFrom", fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@unique([mediaId, relatedMediaId, relationType])
+  @@index([mediaId])
+  @@index([relatedMediaId])
+}
+
+model MediaRecommendation {
+  id                 Int      @id @default(autoincrement())
+  mediaId            Int
+  recommendedMediaId Int
+  rating             Int?
+  nodeSnapshot       Json?
+
+  media Media @relation("MediaRecsFrom", fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@unique([mediaId, recommendedMediaId])
+  @@index([mediaId])
+  @@index([recommendedMediaId])
+}

@@ -1,0 +1,86 @@
+name: Build Tatakai API for Server B
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: tatakai-api-production
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun test tests/operations-api.test.ts tests/novel-fallback.test.ts tests/novel-catalog.test.ts tests/public-image.test.ts tests/tv-pairing.test.ts
+      - uses: docker/setup-buildx-action@v3
+      - run: mkdir -p server-release/images
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: tatakai-api:release
+          outputs: type=docker,dest=server-release/images/api.tar
+      - name: Package immutable image identity
+        run: |
+          export API_IMAGE=$(python3 -c 'import tarfile,json,hashlib; t=tarfile.open("server-release/images/api.tar"); m=json.load(t.extractfile("manifest.json"))[0]; print("sha256:"+hashlib.sha256(t.extractfile(m["Config"]).read()).hexdigest())')
+          node -e 'require("fs").writeFileSync("server-release/release.json",JSON.stringify({component:"api",commit:process.env.GITHUB_SHA,images:{api:process.env.API_IMAGE}}))'
+      - uses: actions/upload-artifact@v4
+        id: release_artifact
+        continue-on-error: true
+        with:
+          name: tatakai-server-b
+          path: server-release/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Preserve verified build when Actions storage is full
+        if: steps.release_artifact.outcome == 'failure'
+        run: node scripts/publish-server-build.mjs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Configure congestion control for the measured lossy build-transfer path
+        run: |
+          sudo modprobe tcp_bbr 2>/dev/null || true
+          if grep -qw bbr /proc/sys/net/ipv4/tcp_available_congestion_control; then
+            sudo sysctl -q -w net.ipv4.tcp_congestion_control=bbr
+          fi
+      - name: Deliver verified build archive to Server B
+        if: github.event_name == 'push' && steps.release_artifact.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          ARTIFACT_ID: ${{ steps.release_artifact.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.release_artifact.outputs.artifact-digest }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os,pathlib,subprocess,json,hashlib,tempfile
+          task=pathlib.Path(tempfile.mkdtemp(prefix='tatakai-delivery-'))
+          key=task/'key';key.write_text(os.environ['DEPLOY_SSH_KEY'].replace('\r\n','\n').rstrip()+'\n');key.chmod(0o600)
+          known=task/'known_hosts';known.write_text(os.environ['DEPLOY_KNOWN_HOSTS'])
+          archive=task/'release.zip';repo=os.environ['GITHUB_REPOSITORY'];artifact=os.environ['ARTIFACT_ID']
+          with archive.open('wb') as output:subprocess.run(['gh','api',f'repos/{repo}/actions/artifacts/{artifact}/zip'],stdout=output,check=True)
+          digest=hashlib.sha256(archive.read_bytes()).hexdigest()
+          assert archive.stat().st_size<=500000000 and digest==os.environ['ARTIFACT_DIGEST'].removeprefix('sha256:')
+          header={'repository':repo,'artifactId':artifact,'digest':digest}
+          proc=subprocess.Popen(['ssh','-T','-o','IPQoS=none','-o','ServerAliveInterval=15','-o','ServerAliveCountMax=3','-i',str(key),'-o','BatchMode=yes','-o',f'UserKnownHostsFile={known}','-o','StrictHostKeyChecking=yes','ubuntu@137.23.42.34'],stdin=subprocess.PIPE)
+          proc.stdin.write((json.dumps(header)+'\n').encode())
+          with archive.open('rb') as source:
+            while chunk:=source.read(65536):proc.stdin.write(chunk)
+          proc.stdin.close();assert proc.wait(timeout=300)==0
+          key.unlink();archive.unlink()
+          PY
